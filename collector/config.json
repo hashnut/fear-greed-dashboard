@@ -1,0 +1,14 @@
+{
+  "tickers": { "voo": "VOO", "tqqq": "TQQQ" },
+
+  "buyThreshold": 25,
+  "sellThreshold": 70,
+  "sellSustainDays": 14,
+
+  "historyStartDate": "2021-01-01",
+  "priceRange": "5y",
+
+  "backtest": {
+    "initialCash": 10000
+  }
+}

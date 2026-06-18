@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#0f1115" />
+<title>공포·탐욕 × VOO/TQQQ</title>
+<link rel="stylesheet" href="style.css" />
+<!-- Chart.js v4 + time adapter + annotation plugin (CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+</head>
+<body>
+<main>
+  <header>
+    <h1>공포·탐욕 지수 × VOO / TQQQ</h1>
+    <div id="updated" class="muted"></div>
+  </header>
+
+  <section id="status" class="card status"></section>
+
+  <section class="card hero">
+    <div class="gauge">
+      <div id="fngScore" class="score">--</div>
+      <div id="fngRating" class="rating">—</div>
+      <div class="gaugebar"><div id="fngFill" class="gaugefill"></div></div>
+      <div class="scaleticks"><span>0 극공포</span><span>50</span><span>100 극탐욕</span></div>
+    </div>
+    <div class="prevstats">
+      <div><span class="k">1주 전</span><span id="pWeek" class="v">—</span></div>
+      <div><span class="k">1달 전</span><span id="pMonth" class="v">—</span></div>
+      <div><span class="k">1년 전</span><span id="pYear" class="v">—</span></div>
+      <div><span class="k">VOO</span><span id="pVoo" class="v">—</span></div>
+      <div><span class="k">TQQQ</span><span id="pTqqq" class="v">—</span></div>
+    </div>
+  </section>
+
+  <div id="ranges" class="ranges">
+    <button data-days="90">3M</button>
+    <button data-days="180">6M</button>
+    <button data-days="365" class="active">1Y</button>
+    <button data-days="730">2Y</button>
+    <button data-days="0">전체</button>
+  </div>
+
+  <section class="card">
+    <h2>공포·탐욕 vs VOO</h2>
+    <div class="chartbox"><canvas id="chartVoo"></canvas></div>
+  </section>
+
+  <section class="card">
+    <h2>공포·탐욕 vs TQQQ</h2>
+    <div class="chartbox"><canvas id="chartTqqq"></canvas></div>
+  </section>
+
+  <section class="card">
+    <h2>백테스트 <span class="muted" id="btRange"></span></h2>
+    <p class="muted small" id="btRule"></p>
+    <div id="backtest"></div>
+  </section>
+
+  <footer class="muted small">
+    <span id="thresholds"></span><br />
+    데이터: CNN Fear &amp; Greed Index · Yahoo Finance · 투자 판단의 책임은 본인에게 있습니다.
+  </footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
