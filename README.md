@@ -21,9 +21,14 @@ run_daily.bat   ← 매일 실행: 수집 → git push
 setup_task.ps1  ← 위 .bat을 윈도우 작업 스케줄러에 등록
 ```
 
-**동작 방식(하이브리드):** 내 PC가 매일 데이터를 받아 `docs/data.json`을 갱신하고
-GitHub에 push → GitHub Pages가 무료로 사이트를 호스팅 → 핸드폰에서 항상 접속.
-PC가 꺼져 있어도 사이트는 열리며, 데이터는 PC가 켜져 수집할 때 갱신됩니다.
+**배포 완료:** https://hashnut.github.io/fear-greed-dashboard/ (GitHub Pages, main `/docs`).
+
+**동작 방식(클라우드 우선 + 로컬 백업):**
+- **클라우드(주력):** GitHub Actions(`.github/workflows/update.yml`)가 매일 13:00·21:00 UTC에
+  데이터를 받아 `docs/data.json`을 갱신·push. **PC가 꺼져 있거나 로그인 안 해도 자동 동작.**
+  (확인됨: CNN이 GitHub 클라우드 IP를 차단하지 않음.)
+- **로컬(선택 백업):** `run_daily.bat`을 작업 스케줄러로 돌려 PC에서도 갱신 가능.
+  push 전에 `git pull --rebase`로 클라우드 커밋과 충돌 없이 공존. 등록은 아래 참고.
 
 ## 매일 수동 실행 / 테스트
 
