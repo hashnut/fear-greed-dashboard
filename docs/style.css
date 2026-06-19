@@ -66,6 +66,16 @@ h2 { font-size: 1.0rem; margin: 0 0 10px; }
 .prevstats .k { color: var(--muted); }
 .prevstats .v { font-weight: 600; }
 
+/* indicator selector */
+.seltitle { margin: 2px 2px 8px; }
+.scrollx { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+.scrollx button { flex: 0 0 auto; white-space: nowrap; }
+.indinfo { padding: 12px 14px; margin-bottom: 14px; font-size: .9rem; line-height: 1.5; }
+.indinfo .dir { font-weight: 700; }
+.indinfo .dir.greed { color: var(--sell); }   /* greed = 매도쪽 = red */
+.indinfo .dir.fear { color: var(--buy); }      /* fear = 매수쪽 = green */
+.indinfo .now { color: var(--fng); font-weight: 700; }
+
 /* range buttons */
 .ranges { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .ranges button {
