@@ -36,6 +36,7 @@ async function init() {
   renderStrategy();
   renderSensitivity();
   renderScaled();
+  renderWalkForward();
   renderBacktest();
   buildIndicatorButtons();
   buildChart("chartVoo", "voo", "VOO", COLORS.voo);
@@ -311,6 +312,49 @@ function renderScaled() {
   }).join("");
   $("scaled").innerHTML = `<div class="scrolltable"><table class="rank">${head}${body}</table>`
     + `<p class="muted small" style="margin-top:8px">숫자 = Calmar(수익÷MDD). ✅ = 분할이 전량보다 우수. 분할은 평균 노출이 낮아(현금 비중↑) 변동성 큰 TQQQ에서 특히 효율이 좋아지는 경향.</p></div>`;
+}
+
+function renderWalkForward() {
+  const w = DATA.walkForward;
+  if (!w) { return; }
+  $("wfNote").textContent = w.note;
+
+  const bv = w.benchmark.voo, bt = w.benchmark.tqqq;
+  $("wfBench").innerHTML =
+    `<b>이 기간(${w.oosFrom} ~ ${w.oosTo})에 그냥 사서 들고만 있었다면 — 이게 넘어야 할 기준선:</b><br>`
+    + `VOO <span class="now">+${bv.returnPct}%</span> · MDD ${bv.maxDrawdownPct}% · Calmar <b>${bv.calmar}</b><br>`
+    + `TQQQ <span class="now">+${bt.returnPct}%</span> · MDD ${bt.maxDrawdownPct}% · Calmar <b>${bt.calmar}</b>`;
+
+  const beats = (c, base) => c != null && base != null && c >= base;
+  const head = `<tr><th>전략 (검증 구간)</th><th>인샘플 Calmar<br><span class="muted small">(낙관치)</span></th>
+    <th>VOO 수익</th><th>VOO MDD</th><th>VOO Calmar</th><th>TQQQ Calmar</th><th>단순보유<br>넘었나(VOO)</th></tr>`;
+  const rows = w.perIndicator.map((r) => {
+    const ov = r.oosVoo, ot = r.oosTqqq;
+    const win = beats(ov?.calmar, bv.calmar);
+    return `<tr>
+      <td>${r.label}</td>
+      <td class="muted">${r.isCalmar ?? "—"}</td>
+      <td class="${cls(ov?.returnPct)}">${ov ? pct(ov.returnPct) : "—"}</td>
+      <td class="neg">${ov ? "-" + ov.maxDrawdownPct + "%" : "—"}</td>
+      ${calmarCell(ov?.calmar)}
+      ${calmarCell(ot?.calmar, 15)}
+      <td>${win ? "✅ 넘음" : "❌ 못넘음"}</td></tr>`;
+  }).join("");
+  const a = w.autoPick;
+  const autoRow = `<tr style="border-top:2px solid var(--line)">
+      <td><b>🤖 자동선택</b><br><span class="muted small">매 구간 1등 지표</span></td>
+      <td class="muted">—</td>
+      <td class="${cls(a.voo?.returnPct)}">${a.voo ? pct(a.voo.returnPct) : "—"}</td>
+      <td class="neg">${a.voo ? "-" + a.voo.maxDrawdownPct + "%" : "—"}</td>
+      ${calmarCell(a.voo?.calmar)}
+      ${calmarCell(a.tqqq?.calmar, 15)}
+      <td>${beats(a.voo?.calmar, bv.calmar) ? "✅ 넘음" : "❌ 못넘음"}</td></tr>`;
+
+  $("walkforward").innerHTML = `<div class="scrolltable"><table class="rank">${head}${rows}${autoRow}</table></div>`;
+
+  // which indicator the auto-picker chose each period
+  const picks = a.picks.map((p) => `${p.from.slice(0, 7)} → ${({ safehaven: "안전자산", combo: "복합", fng: "종합", putcall: "풋/콜", momentum: "모멘텀" })[p.key] || p.key}(상위 ${Math.round(p.X * 100)}%)`).join("  ·  ");
+  $("wfPicks").innerHTML = `<b>자동선택이 매 구간 고른 지표:</b> ${picks}`;
 }
 
 function renderBacktest() {

@@ -431,6 +431,76 @@ function computeScaled(series, cfg, pctMap) {
     note: `분할매수: 공포 백분위가 ${Math.round(lo * 100)}% 미만이면 현금, ${Math.round(hi * 100)}%↑면 100% 투자, 그 사이는 비례 배분(매일 리밸런싱). '전량'은 같은 신호로 올인/올아웃.` };
 }
 
+// ---- Walk-forward: optimize on past, apply to unseen future -----------
+function computeWalkForward(series, cfg, pctMap) {
+  const initial = cfg.backtest.initialCash;
+  const p0 = cfg.strategyTest;
+  const grid = [0.10, 0.15, 0.20, 0.25, 0.30];
+  const N = series.length;
+  const minTrain = 504, chunk = 126; // ~2y warm-up, re-optimize every ~6 months
+  if (N < minTrain + chunk) return null;
+  const candidates = ["safehaven", "combo", "fng", "putcall", "momentum"];
+
+  const pp = (X) => ({ buyPercentile: 1 - X, sellPercentile: X, sellSustainDays: p0.sellSustainDays,
+    comboMinFear: p0.comboMinFear, comboMinGreed: p0.comboMinGreed });
+  const gen = (key, a, b, X) => {
+    const sl = series.slice(a, b);
+    return key === "combo"
+      ? comboSignals(sl, p0.comboKeys.map((k) => pctMap[k].slice(a, b)), pp(X))
+      : signalsFromPct(sl, pctMap[key].slice(a, b), pp(X));
+  };
+  const evalRange = (key, a, b, X, asset) => {
+    const sl = series.slice(a, b), s = gen(key, a, b, X);
+    const bt = backtest(sl, asset, s.buys, s.sells, initial);
+    return bt ? bt.strategy : null;
+  };
+  const bestX = (key, a, b, asset) => { // optimize threshold on [a,b) by Calmar
+    let bx = 0.15, bc = -Infinity;
+    for (const X of grid) { const s = evalRange(key, a, b, X, asset); const c = s ? calmarOf(s) : null; if (c != null && c > bc) { bc = c; bx = X; } }
+    return { X: bx, cal: bc === -Infinity ? null : round2(bc) };
+  };
+  const metrics = (s) => (s ? { returnPct: s.returnPct, maxDrawdownPct: s.maxDrawdownPct, calmar: calmarOf(s), trades: s.trades } : null);
+
+  const slO = series.slice(minTrain, N); // out-of-sample evaluation span
+  const bh = (b) => ({ returnPct: b.returnPct, maxDrawdownPct: b.maxDrawdownPct, calmar: calmarOf(b) });
+  const benchmark = { voo: bh(backtest(slO, "voo", [], [], initial).buyHold), tqqq: bh(backtest(slO, "tqqq", [], [], initial).buyHold) };
+
+  // per-indicator: optimize threshold each fold, apply to next unseen chunk
+  const perIndicator = [];
+  for (const key of candidates) {
+    const buys = [], sells = [];
+    for (let t0 = minTrain; t0 < N; t0 += chunk) {
+      const t1 = Math.min(t0 + chunk, N);
+      const opt = bestX(key, 0, t0, "voo");
+      const s = gen(key, t0, t1, opt.X);
+      buys.push(...s.buys); sells.push(...s.sells);
+    }
+    const v = backtest(slO, "voo", buys, sells, initial).strategy;
+    const t = backtest(slO, "tqqq", buys, sells, initial).strategy;
+    perIndicator.push({ key, label: indLabel(key), isCalmar: bestX(key, 0, N, "voo").cal, oosVoo: metrics(v), oosTqqq: metrics(t) });
+  }
+  perIndicator.sort((a, b) => (b.oosVoo?.calmar ?? -99) - (a.oosVoo?.calmar ?? -99));
+
+  // auto-pick: each fold choose the indicator with best training Calmar, apply unseen
+  const buysA = [], sellsA = [], picks = [];
+  for (let t0 = minTrain; t0 < N; t0 += chunk) {
+    const t1 = Math.min(t0 + chunk, N);
+    let best = null;
+    for (const key of candidates) { const o = bestX(key, 0, t0, "voo"); if (o.cal != null && (best == null || o.cal > best.cal)) best = { key, X: o.X, cal: o.cal }; }
+    if (!best) best = { key: "fng", X: 0.15 };
+    picks.push({ from: series[t0].date, key: best.key, label: indLabel(best.key), X: best.X });
+    const s = gen(best.key, t0, t1, best.X); buysA.push(...s.buys); sellsA.push(...s.sells);
+  }
+  const av = backtest(slO, "voo", buysA, sellsA, initial).strategy;
+  const at = backtest(slO, "tqqq", buysA, sellsA, initial).strategy;
+
+  return {
+    oosFrom: series[minTrain].date, oosTo: series[N - 1].date, trainYears: round2(minTrain / 252),
+    benchmark, perIndicator, autoPick: { voo: metrics(av), tqqq: metrics(at), picks },
+    note: `학습 구간에서 임계값(공포 상위 X%)을 최적화한 뒤, 한 번도 보지 않은 다음 구간에 적용. 검증(OOS)은 ${series[minTrain].date}부터(앞 ~2년은 학습용). '자동선택'은 매 구간 학습 1등 지표를 골라 적용 — 지표 선택 과정 자체를 검증.`,
+  };
+}
+
 function buildStatus(cur, sig, cfg) {
   if (!cur) return { level: "unknown", text: "데이터 없음" };
   const s = cur.score;
@@ -523,6 +593,7 @@ async function main() {
     strategyTest: computeStrategyTest(series, cfg, sigs, pctMap),
     sensitivity: computeSensitivity(series, cfg, pctMap),
     scaled: computeScaled(series, cfg, pctMap),
+    walkForward: computeWalkForward(series, cfg, pctMap),
     series,
     errors,
   };
