@@ -245,6 +245,105 @@ function computeAnalysis(series) {
   };
 }
 
+// ---- Strategy comparison: percentile signals per indicator + combo -----
+// Orient each indicator to "fear" (sign), rank within a trailing window, then
+// buy on entering extreme fear and sell when greed persists. No look-ahead:
+// the percentile only uses values up to and including the current day.
+const dirOf = (key) => (key === "fng" ? "greedUp" : COMPONENTS.find((c) => c.key === key)?.direction);
+const fearSign = (key) => (dirOf(key) === "fearUp" ? 1 : -1);
+const MIN_WIN = 60; // need this many trailing points before trusting a percentile
+
+function pctSeries(series, key) {
+  // returns array aligned to series: percentile of fear-oriented value within trailing window
+  const sign = fearSign(key);
+  const out = new Array(series.length).fill(null);
+  const win = [];
+  return { compute(W) {
+    win.length = 0;
+    for (let i = 0; i < series.length; i++) {
+      const raw = series[i][key];
+      if (raw == null) { out[i] = null; continue; }
+      const v = sign * raw;
+      win.push(v); if (win.length > W) win.shift();
+      if (win.length < MIN_WIN) { out[i] = null; continue; }
+      let le = 0; for (const w of win) if (w <= v) le++;
+      out[i] = le / win.length;
+    }
+    return out;
+  } };
+}
+
+function signalsFromPct(series, pct, p) {
+  const buys = [], sells = [];
+  let prev = null, greedStreak = 0;
+  for (let i = 0; i < series.length; i++) {
+    const x = pct[i];
+    if (x == null) continue;
+    if (prev != null && prev < p.buyPercentile && x >= p.buyPercentile) buys.push({ date: series[i].date });
+    if (x <= p.sellPercentile) { greedStreak++; if (greedStreak === p.sellSustainDays) sells.push({ date: series[i].date }); }
+    else greedStreak = 0;
+    prev = x;
+  }
+  return { buys, sells };
+}
+
+function comboSignals(series, pcts, p) {
+  const buys = [], sells = [];
+  let prevFear = 0, greedStreak = 0;
+  for (let i = 0; i < series.length; i++) {
+    let fear = 0, greed = 0, avail = 0;
+    for (const arr of pcts) { const x = arr[i]; if (x == null) continue; avail++; if (x >= p.buyPercentile) fear++; if (x <= p.sellPercentile) greed++; }
+    if (avail) {
+      if (prevFear < p.comboMinFear && fear >= p.comboMinFear) buys.push({ date: series[i].date });
+      if (greed >= p.comboMinGreed) { greedStreak++; if (greedStreak === p.sellSustainDays) sells.push({ date: series[i].date }); }
+      else greedStreak = 0;
+      prevFear = fear;
+    }
+  }
+  return { buys, sells };
+}
+
+function computeStrategyTest(series, cfg, fixedSigs) {
+  const p = cfg.strategyTest;
+  const initial = cfg.backtest.initialCash;
+  const labelOf = (key) => (key === "fng" ? "공포·탐욕 종합 (백분위)" : COMPONENTS.find((c) => c.key === key)?.label);
+  const calmar = (s) => (s && s.maxDrawdownPct > 0 ? round2(s.returnPct / s.maxDrawdownPct) : null);
+
+  const pctMap = {};
+  for (const k of ALL_KEYS) pctMap[k] = pctSeries(series, k).compute(p.trailingWindow);
+
+  const make = (label, key, sig) => {
+    const v = backtest(series, "voo", sig.buys, sig.sells, initial);
+    const t = backtest(series, "tqqq", sig.buys, sig.sells, initial);
+    if (!v || !t) return null;
+    const pick = (s) => ({ returnPct: s.returnPct, maxDrawdownPct: s.maxDrawdownPct, calmar: calmar(s), trades: s.trades, timeInMarketPct: s.timeInMarketPct });
+    return { label, key, voo: pick(v.strategy), tqqq: pick(t.strategy) };
+  };
+
+  const rows = [];
+  // buy & hold reference
+  {
+    const v = backtest(series, "voo", [], [], initial), t = backtest(series, "tqqq", [], [], initial);
+    const bh = (b) => ({ returnPct: b.returnPct, maxDrawdownPct: b.maxDrawdownPct, calmar: calmar(b), trades: 1, timeInMarketPct: 100 });
+    rows.push({ label: "단순보유 (Buy&Hold)", key: "buyhold", voo: bh(v.buyHold), tqqq: bh(t.buyHold) });
+  }
+  // existing overall-index fixed-threshold strategy (25/70)
+  rows.push(make(`공포·탐욕 종합 (고정 ${cfg.buyThreshold}/${cfg.sellThreshold})`, "fng_fixed", fixedSigs));
+  // each indicator via percentile
+  for (const k of ALL_KEYS) rows.push(make(labelOf(k), k, signalsFromPct(series, pctMap[k], p)));
+  // combo
+  rows.push(make(`복합 (${p.comboKeys.join("+")}, ${p.comboMinFear}개↑ 공포)`, "combo",
+    comboSignals(series, p.comboKeys.map((k) => pctMap[k]), p)));
+
+  const out = rows.filter(Boolean);
+  out.sort((a, b) => (b.voo.calmar ?? -99) - (a.voo.calmar ?? -99));
+  return {
+    params: p,
+    note: `각 지표를 공포 방향으로 정렬해 과거 ${p.trailingWindow}일 대비 백분위로 신호 생성. 공포 상위 ${Math.round((1 - p.buyPercentile) * 100)}% 진입 시 매수, 탐욕 하위 ${Math.round(p.sellPercentile * 100)}%가 ${p.sellSustainDays}일 지속 시 매도. 수익÷MDD(Calmar)가 높을수록 '덜 물리고 잘 번' 전략.`,
+    rows: out,
+  };
+}
+
 function buildStatus(cur, sig, cfg) {
   if (!cur) return { level: "unknown", text: "데이터 없음" };
   const s = cur.score;
@@ -330,6 +429,7 @@ async function main() {
     signals: { buys: sigs.buys, sells: sigs.sells },
     backtest: bt,
     analysis: computeAnalysis(series),
+    strategyTest: computeStrategyTest(series, cfg, sigs),
     series,
     errors,
   };

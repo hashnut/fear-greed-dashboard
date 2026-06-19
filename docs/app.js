@@ -33,6 +33,7 @@ async function init() {
   if (IND[hash]) currentInd = hash;
   renderHeader();
   renderAnalysis();
+  renderStrategy();
   renderBacktest();
   buildIndicatorButtons();
   buildChart("chartVoo", "voo", "VOO", COLORS.voo);
@@ -219,6 +220,44 @@ function renderAnalysis() {
   }).join("");
 
   $("ranking").innerHTML = `<div class="scrolltable"><table class="rank">${head}${body}</table></div>`;
+}
+
+function renderStrategy() {
+  const st = DATA.strategyTest;
+  if (!st) return;
+  $("stNote").textContent = st.note;
+  $("stFoot").innerHTML =
+    `Calmar = 수익률 ÷ 최대낙폭 (클수록 효율적). <b>단순보유보다 Calmar가 높으면</b> 그 신호로 타이밍 잡는 게 의미 있었다는 뜻. `
+    + `<span class="muted">주의: 복합 신호는 같은 데이터로 고른 거라 과최적화 가능 · 백분위 전략은 첫 1년은 신호 없음(워밍업) · 과거 성과가 미래를 보장하지 않음.</span>`;
+
+  const calCell = (c) => {
+    if (c == null) return `<td>—</td>`;
+    const mag = Math.min(Math.abs(c) / 5, 1);
+    const bg = c >= 0 ? `rgba(46,204,113,${(mag * 0.55).toFixed(2)})` : `rgba(231,76,60,${(mag * 0.55).toFixed(2)})`;
+    return `<td style="background:${bg};font-weight:700">${c.toFixed(2)}</td>`;
+  };
+  const ret = (s) => `<td class="${cls(s.returnPct)}">${pct(s.returnPct)}</td>`;
+  const mdd = (s) => `<td class="neg">-${s.maxDrawdownPct}%</td>`;
+
+  const baseline = st.rows.find((r) => r.key === "buyhold")?.voo.calmar ?? 0;
+  const head = `<tr><th>전략</th>
+    <th>VOO 수익</th><th>VOO MDD</th><th>VOO Calmar</th>
+    <th>TQQQ 수익</th><th>TQQQ MDD</th><th>TQQQ Calmar</th>
+    <th>매매</th><th>투자%</th></tr>`;
+  const body = st.rows.map((r, idx) => {
+    const tag = r.key === "buyhold" ? " <span class='muted small'>(기준)</span>"
+      : r.key === "fng_fixed" ? " <span class='muted small'>(현재규칙)</span>"
+      : r.key === "combo" ? " 🧩" : "";
+    const star = idx === 0 ? " ⭐" : "";
+    const beat = r.key !== "buyhold" && r.voo.calmar != null && r.voo.calmar > baseline;
+    return `<tr style="${beat ? "outline:1px solid rgba(46,204,113,.25)" : ""}">
+      <td>${r.label}${star}${tag}</td>
+      ${ret(r.voo)}${mdd(r.voo)}${calCell(r.voo.calmar)}
+      ${ret(r.tqqq)}${mdd(r.tqqq)}${calCell(r.tqqq.calmar)}
+      <td>${r.voo.trades}</td><td>${r.voo.timeInMarketPct}%</td></tr>`;
+  }).join("");
+
+  $("strategy").innerHTML = `<div class="scrolltable"><table class="rank">${head}${body}</table></div>`;
 }
 
 function renderBacktest() {

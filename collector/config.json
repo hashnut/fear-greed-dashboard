@@ -10,5 +10,15 @@
 
   "backtest": {
     "initialCash": 10000
+  },
+
+  "strategyTest": {
+    "trailingWindow": 252,
+    "buyPercentile": 0.85,
+    "sellPercentile": 0.15,
+    "sellSustainDays": 10,
+    "comboKeys": ["putcall", "safehaven", "fng"],
+    "comboMinFear": 2,
+    "comboMinGreed": 2
   }
 }
