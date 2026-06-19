@@ -187,6 +187,64 @@ function backtest(series, key, buys, sells, initial) {
   };
 }
 
+// ---- Indicator meaningfulness: fear-oriented value vs forward returns --
+function pearson(xs, ys) {
+  const n = xs.length;
+  if (n < 20) return null;
+  let sx = 0, sy = 0;
+  for (let i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; }
+  const mx = sx / n, my = sy / n;
+  let num = 0, dx = 0, dy = 0;
+  for (let i = 0; i < n; i++) { const a = xs[i] - mx, b = ys[i] - my; num += a * b; dx += a * a; dy += b * b; }
+  if (dx === 0 || dy === 0) return null;
+  return num / Math.sqrt(dx * dy);
+}
+
+function computeAnalysis(series) {
+  const HOR = [{ k: "w", label: "1주", days: 5 }, { k: "m", label: "1달", days: 21 }, { k: "q", label: "3달", days: 63 }];
+  const dir = { fng: "greedUp" };
+  for (const c of COMPONENTS) dir[c.key] = c.direction;
+
+  const valMap = {};
+  for (const k of ALL_KEYS) valMap[k] = {};
+  for (const row of series) for (const k of ALL_KEYS) if (row[k] != null) valMap[k][row.date] = row[k];
+
+  // trading-day sequences per asset (price-only, ordered)
+  const seq = { voo: series.filter((r) => r.voo != null), tqqq: series.filter((r) => r.tqqq != null) };
+
+  const rows = [];
+  for (const k of ALL_KEYS) {
+    const sign = dir[k] === "fearUp" ? 1 : -1; // orient so higher = more FEAR
+    const corr = {}; const nObs = {};
+    for (const asset of ["voo", "tqqq"]) {
+      corr[asset] = {}; nObs[asset] = {};
+      const s = seq[asset];
+      for (const h of HOR) {
+        const xs = [], ys = [];
+        for (let i = 0; i + h.days < s.length; i++) {
+          const v = valMap[k][s[i].date];
+          if (v == null) continue;
+          xs.push(sign * v);
+          ys.push(s[i + h.days][asset] / s[i][asset] - 1);
+        }
+        const r = pearson(xs, ys);
+        corr[asset][h.k] = r == null ? null : round2(r);
+        nObs[asset][h.k] = xs.length;
+      }
+    }
+    const all = [];
+    for (const a of ["voo", "tqqq"]) for (const h of HOR) if (corr[a][h.k] != null) all.push(corr[a][h.k]);
+    const composite = all.length ? round2(all.reduce((x, y) => x + y, 0) / all.length) : null;
+    rows.push({ key: k, composite, corr, n: nObs.voo?.m ?? null });
+  }
+  rows.sort((a, b) => (b.composite ?? -9) - (a.composite ?? -9));
+  return {
+    horizons: HOR,
+    rows,
+    note: "공포 방향으로 정렬한 지표값 vs 이후 수익률의 상관계수. 양수 = 공포일수록 이후 상승(역발상 매수가 유리했던 지표).",
+  };
+}
+
 function buildStatus(cur, sig, cfg) {
   if (!cur) return { level: "unknown", text: "데이터 없음" };
   const s = cur.score;
@@ -271,6 +329,7 @@ async function main() {
     indicators,
     signals: { buys: sigs.buys, sells: sigs.sells },
     backtest: bt,
+    analysis: computeAnalysis(series),
     series,
     errors,
   };

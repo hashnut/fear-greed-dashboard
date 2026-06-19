@@ -32,6 +32,7 @@ async function init() {
   const hash = location.hash.replace("#", "");
   if (IND[hash]) currentInd = hash;
   renderHeader();
+  renderAnalysis();
   renderBacktest();
   buildIndicatorButtons();
   buildChart("chartVoo", "voo", "VOO", COLORS.voo);
@@ -181,6 +182,43 @@ function render() {
 
     ch.update("none");
   }
+}
+
+function renderAnalysis() {
+  const a = DATA.analysis;
+  if (!a) return;
+  $("anNote").textContent = a.note;
+  $("anFoot").innerHTML =
+    `읽는 법: 숫자는 상관계수(−1~+1). <b>양수가 클수록</b> "그 지표가 공포를 가리킬 때 이후 가격이 올랐다"는 뜻 → 역발상 매수에 의미 있는 지표. `
+    + `<b>음수</b>면 반대(추세 지속 쪽). 0.2 이상이면 약하게나마 의미 있는 편. `
+    + `<span class="muted">(설명용 통계 · 구간 중첩으로 과대평가 가능 · n≈${a.rows[0]?.n ?? "?"})</span>`;
+
+  const H = a.horizons; // [{k,label,days}]
+  const head = `<tr><th>지표</th><th>방향</th><th>종합</th>`
+    + H.map((h) => `<th>VOO ${h.label}</th>`).join("")
+    + H.map((h) => `<th>TQQQ ${h.label}</th>`).join("") + `</tr>`;
+
+  const cell = (v) => {
+    if (v == null) return `<td>—</td>`;
+    const mag = Math.min(Math.abs(v) / 0.35, 1);
+    const bg = v >= 0 ? `rgba(46,204,113,${(mag * 0.5).toFixed(2)})` : `rgba(231,76,60,${(mag * 0.5).toFixed(2)})`;
+    return `<td style="background:${bg}">${v > 0 ? "+" : ""}${v.toFixed(2)}</td>`;
+  };
+
+  const body = a.rows.map((r, idx) => {
+    const meta = IND[r.key] || { label: r.key, direction: "" };
+    const dir = meta.direction === "fearUp" ? "↑공포" : "↑탐욕";
+    const star = idx === 0 ? " ⭐" : "";
+    return `<tr>
+      <td>${meta.label}${star}</td>
+      <td class="muted small">${dir}</td>
+      <td style="font-weight:700;background:${r.composite >= 0 ? `rgba(46,204,113,${Math.min(Math.abs(r.composite) / 0.35, 1) * 0.55})` : `rgba(231,76,60,${Math.min(Math.abs(r.composite) / 0.35, 1) * 0.55})`}">${r.composite > 0 ? "+" : ""}${r.composite == null ? "—" : r.composite.toFixed(2)}</td>
+      ${H.map((h) => cell(r.corr.voo[h.k])).join("")}
+      ${H.map((h) => cell(r.corr.tqqq[h.k])).join("")}
+    </tr>`;
+  }).join("");
+
+  $("ranking").innerHTML = `<div class="scrolltable"><table class="rank">${head}${body}</table></div>`;
 }
 
 function renderBacktest() {

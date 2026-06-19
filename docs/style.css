@@ -100,6 +100,11 @@ table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 th, td { padding: 8px 6px; text-align: right; border-bottom: 1px solid var(--line); }
 th:first-child, td:first-child { text-align: left; }
 thead th { color: var(--muted); font-weight: 600; }
+.scrolltable { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table.rank { min-width: 560px; font-size: .82rem; }
+table.rank th, table.rank td { padding: 7px 6px; white-space: nowrap; text-align: center; border-bottom: 1px solid var(--line); }
+table.rank th:first-child, table.rank td:first-child { text-align: left; position: sticky; left: 0; background: var(--card); z-index: 1; }
+table.rank thead th { color: var(--muted); font-weight: 600; }
 .bt-title { font-weight: 700; margin: 14px 0 4px; }
 .pos { color: var(--buy); }
 .neg { color: var(--sell); }
