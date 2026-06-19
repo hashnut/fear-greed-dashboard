@@ -19,6 +19,8 @@
     "sellSustainDays": 10,
     "comboKeys": ["putcall", "safehaven", "fng"],
     "comboMinFear": 2,
-    "comboMinGreed": 2
+    "comboMinGreed": 2,
+    "scaledLoFear": 0.4,
+    "scaledHiFear": 0.9
   }
 }

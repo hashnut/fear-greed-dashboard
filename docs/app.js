@@ -34,6 +34,8 @@ async function init() {
   renderHeader();
   renderAnalysis();
   renderStrategy();
+  renderSensitivity();
+  renderScaled();
   renderBacktest();
   buildIndicatorButtons();
   buildChart("chartVoo", "voo", "VOO", COLORS.voo);
@@ -258,6 +260,57 @@ function renderStrategy() {
   }).join("");
 
   $("strategy").innerHTML = `<div class="scrolltable"><table class="rank">${head}${body}</table></div>`;
+}
+
+function calmarCell(c, scale = 5, bold = true) {
+  if (c == null) return `<td>—</td>`;
+  const mag = Math.min(Math.abs(c) / scale, 1);
+  const bg = c >= 0 ? `rgba(46,204,113,${(mag * 0.55).toFixed(2)})` : `rgba(231,76,60,${(mag * 0.55).toFixed(2)})`;
+  return `<td style="background:${bg};${bold ? "font-weight:700" : ""}">${c.toFixed(2)}</td>`;
+}
+
+function renderSensitivity() {
+  const se = DATA.sensitivity;
+  if (!se) return;
+  $("seNote").textContent = se.note;
+  const cols = se.grid.map((x) => `공포 상위 ${Math.round(x * 100)}%`);
+  const head = `<tr><th>전략</th>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
+  const body = se.rows.map((r) => {
+    const cells = r.voo.map((v, i) => {
+      const t = r.tqqq[i];
+      if (v == null) return `<td>—</td>`;
+      const mag = Math.min(Math.abs(v) / 5, 1);
+      const bg = v >= 0 ? `rgba(46,204,113,${(mag * 0.55).toFixed(2)})` : `rgba(231,76,60,${(mag * 0.55).toFixed(2)})`;
+      return `<td style="background:${bg}"><b>${v.toFixed(2)}</b><br><span class="muted small">(${t == null ? "—" : t.toFixed(2)})</span></td>`;
+    }).join("");
+    return `<tr><td>${r.label}</td>${cells}</tr>`;
+  }).join("");
+  $("sensitivity").innerHTML = `<div class="scrolltable"><table class="rank">${head}${body}</table></div>`;
+}
+
+function renderScaled() {
+  const sc = DATA.scaled;
+  if (!sc) return;
+  $("scNote").textContent = sc.note;
+  const head = `<tr><th>전략</th>
+    <th>VOO 전량</th><th>VOO 분할</th>
+    <th>TQQQ 전량</th><th>TQQQ 분할</th><th>분할 평균노출</th></tr>`;
+  const body = sc.rows.map((r) => {
+    const better = (a, s) => s?.calmar != null && a?.calmar != null && s.calmar > a.calmar;
+    const mark = (s, win) => {
+      const cell = calmarCell(s?.calmar);
+      return win ? cell.replace("<td", "<td title='분할이 더 우수' ").replace(">", " ✅>") : cell;
+    };
+    return `<tr>
+      <td>${r.label}</td>
+      ${calmarCell(r.allin.voo.calmar)}
+      ${mark(r.scaled.voo, better(r.allin.voo, r.scaled.voo))}
+      ${calmarCell(r.allin.tqqq.calmar)}
+      ${mark(r.scaled.tqqq, better(r.allin.tqqq, r.scaled.tqqq))}
+      <td class="muted">${r.scaled.voo?.avgExposurePct ?? "—"}%</td></tr>`;
+  }).join("");
+  $("scaled").innerHTML = `<div class="scrolltable"><table class="rank">${head}${body}</table>`
+    + `<p class="muted small" style="margin-top:8px">숫자 = Calmar(수익÷MDD). ✅ = 분할이 전량보다 우수. 분할은 평균 노출이 낮아(현금 비중↑) 변동성 큰 TQQQ에서 특히 효율이 좋아지는 경향.</p></div>`;
 }
 
 function renderBacktest() {

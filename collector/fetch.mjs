@@ -252,6 +252,9 @@ function computeAnalysis(series) {
 const dirOf = (key) => (key === "fng" ? "greedUp" : COMPONENTS.find((c) => c.key === key)?.direction);
 const fearSign = (key) => (dirOf(key) === "fearUp" ? 1 : -1);
 const MIN_WIN = 60; // need this many trailing points before trusting a percentile
+const calmarOf = (s) => (s && s.maxDrawdownPct > 0 ? round2(s.returnPct / s.maxDrawdownPct) : null);
+const indLabel = (key) =>
+  key === "fng" ? "공포·탐욕 종합" : key === "combo" ? "복합" : (COMPONENTS.find((c) => c.key === key)?.label ?? key);
 
 function pctSeries(series, key) {
   // returns array aligned to series: percentile of fear-oriented value within trailing window
@@ -303,14 +306,11 @@ function comboSignals(series, pcts, p) {
   return { buys, sells };
 }
 
-function computeStrategyTest(series, cfg, fixedSigs) {
+function computeStrategyTest(series, cfg, fixedSigs, pctMap) {
   const p = cfg.strategyTest;
   const initial = cfg.backtest.initialCash;
   const labelOf = (key) => (key === "fng" ? "공포·탐욕 종합 (백분위)" : COMPONENTS.find((c) => c.key === key)?.label);
-  const calmar = (s) => (s && s.maxDrawdownPct > 0 ? round2(s.returnPct / s.maxDrawdownPct) : null);
-
-  const pctMap = {};
-  for (const k of ALL_KEYS) pctMap[k] = pctSeries(series, k).compute(p.trailingWindow);
+  const calmar = calmarOf;
 
   const make = (label, key, sig) => {
     const v = backtest(series, "voo", sig.buys, sig.sells, initial);
@@ -342,6 +342,93 @@ function computeStrategyTest(series, cfg, fixedSigs) {
     note: `각 지표를 공포 방향으로 정렬해 과거 ${p.trailingWindow}일 대비 백분위로 신호 생성. 공포 상위 ${Math.round((1 - p.buyPercentile) * 100)}% 진입 시 매수, 탐욕 하위 ${Math.round(p.sellPercentile * 100)}%가 ${p.sellSustainDays}일 지속 시 매도. 수익÷MDD(Calmar)가 높을수록 '덜 물리고 잘 번' 전략.`,
     rows: out,
   };
+}
+
+// ---- Threshold sensitivity: is the edge robust across cutoffs? ---------
+function comboPctArray(series, pctMap, keys) {
+  return series.map((_, i) => {
+    let sum = 0, n = 0;
+    for (const k of keys) { const x = pctMap[k][i]; if (x != null) { sum += x; n++; } }
+    return n ? sum / n : null;
+  });
+}
+
+function computeSensitivity(series, cfg, pctMap) {
+  const grid = [0.10, 0.15, 0.20, 0.25, 0.30]; // buy when in the most-fearful top X%
+  const p0 = cfg.strategyTest;
+  const targets = ["safehaven", "combo", "fng"];
+  const rows = [];
+  for (const key of targets) {
+    const voo = [], tqqq = [];
+    for (const X of grid) {
+      const p = { buyPercentile: 1 - X, sellPercentile: X, sellSustainDays: p0.sellSustainDays,
+        comboMinFear: p0.comboMinFear, comboMinGreed: p0.comboMinGreed };
+      const sig = key === "combo"
+        ? comboSignals(series, p0.comboKeys.map((k) => pctMap[k]), p)
+        : signalsFromPct(series, pctMap[key], p);
+      const v = backtest(series, "voo", sig.buys, sig.sells, cfg.backtest.initialCash);
+      const t = backtest(series, "tqqq", sig.buys, sig.sells, cfg.backtest.initialCash);
+      voo.push(v ? calmarOf(v.strategy) : null);
+      tqqq.push(t ? calmarOf(t.strategy) : null);
+    }
+    rows.push({ key, label: indLabel(key), voo, tqqq });
+  }
+  return { grid, rows, note: "셀 = VOO Calmar (괄호 = TQQQ). 임계값(공포 상위 X%)을 바꿔도 값이 고르게 높으면 견고한 신호, 특정 칸만 튀면 운빨." };
+}
+
+// ---- Scaled buying: position size ∝ fear depth (vs all-in) -------------
+function backtestScaled(series, asset, pctArr, lo, hi, initial) {
+  const wf = (pct) => Math.max(0, Math.min(1, (pct - lo) / (hi - lo)));
+  let cash = initial, shares = 0, lastPrice = null, prevW = null, trades = 0, expSum = 0, expN = 0;
+  const curve = [];
+  for (let i = 0; i < series.length; i++) {
+    if (series[i][asset] != null) lastPrice = series[i][asset];
+    if (lastPrice == null) continue;
+    const pct = pctArr[i];
+    if (pct != null) {
+      const wTarget = wf(pct);
+      if (prevW == null || Math.abs(wTarget - prevW) > 0.05) {
+        const equity = cash + shares * lastPrice;
+        const desired = (equity * wTarget) / lastPrice;
+        cash -= (desired - shares) * lastPrice; shares = desired; prevW = wTarget; trades++;
+      }
+    }
+    const eq = cash + shares * lastPrice;
+    if (eq > 0) { expSum += (shares * lastPrice) / eq; expN++; }
+    curve.push(eq);
+  }
+  if (curve.length < 2) return null;
+  const final = curve[curve.length - 1];
+  let peak = -Infinity, mdd = 0;
+  for (const v of curve) { if (v > peak) peak = v; const dd = (peak - v) / peak; if (dd > mdd) mdd = dd; }
+  const ret = (final / initial - 1) * 100, mddPct = round1(mdd * 100);
+  return { returnPct: round1(ret), maxDrawdownPct: mddPct, calmar: mddPct > 0 ? round2(ret / mddPct) : null,
+    avgExposurePct: round1((expSum / expN) * 100), trades };
+}
+
+function computeScaled(series, cfg, pctMap) {
+  const p = cfg.strategyTest;
+  const lo = p.scaledLoFear ?? 0.4, hi = p.scaledHiFear ?? 0.9;
+  const initial = cfg.backtest.initialCash;
+  const targets = ["safehaven", "combo", "fng"];
+  const rows = [];
+  for (const key of targets) {
+    const arr = key === "combo" ? comboPctArray(series, pctMap, p.comboKeys) : pctMap[key];
+    // all-in (percentile) reference
+    const sig = key === "combo"
+      ? comboSignals(series, p.comboKeys.map((k) => pctMap[k]), p)
+      : signalsFromPct(series, pctMap[key], p);
+    const av = backtest(series, "voo", sig.buys, sig.sells, initial);
+    const at = backtest(series, "tqqq", sig.buys, sig.sells, initial);
+    const pickAllin = (b) => ({ returnPct: b.returnPct, maxDrawdownPct: b.maxDrawdownPct, calmar: calmarOf(b), avgExposurePct: b.timeInMarketPct });
+    rows.push({
+      key, label: indLabel(key),
+      allin: { voo: pickAllin(av.strategy), tqqq: pickAllin(at.strategy) },
+      scaled: { voo: backtestScaled(series, "voo", arr, lo, hi, initial), tqqq: backtestScaled(series, "tqqq", arr, lo, hi, initial) },
+    });
+  }
+  return { lo, hi, rows,
+    note: `분할매수: 공포 백분위가 ${Math.round(lo * 100)}% 미만이면 현금, ${Math.round(hi * 100)}%↑면 100% 투자, 그 사이는 비례 배분(매일 리밸런싱). '전량'은 같은 신호로 올인/올아웃.` };
 }
 
 function buildStatus(cur, sig, cfg) {
@@ -401,6 +488,10 @@ async function main() {
 
   // 4) Signals + backtest (overall index)
   const sigs = computeSignals(series, cfg);
+
+  // trailing-window fear percentiles per indicator (reused by strategy analyses)
+  const pctMap = {};
+  for (const k of ALL_KEYS) pctMap[k] = pctSeries(series, k).compute(cfg.strategyTest.trailingWindow);
   const bt = { voo: backtest(series, "voo", sigs.buys, sigs.sells, cfg.backtest.initialCash),
                tqqq: backtest(series, "tqqq", sigs.buys, sigs.sells, cfg.backtest.initialCash) };
 
@@ -429,7 +520,9 @@ async function main() {
     signals: { buys: sigs.buys, sells: sigs.sells },
     backtest: bt,
     analysis: computeAnalysis(series),
-    strategyTest: computeStrategyTest(series, cfg, sigs),
+    strategyTest: computeStrategyTest(series, cfg, sigs, pctMap),
+    sensitivity: computeSensitivity(series, cfg, pctMap),
+    scaled: computeScaled(series, cfg, pctMap),
     series,
     errors,
   };
