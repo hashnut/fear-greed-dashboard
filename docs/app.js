@@ -49,6 +49,7 @@ async function init() {
   renderSensitivity();
   renderScaled();
   renderWalkForward();
+  renderDCA();
   renderBacktest();
   buildIndicatorButtons();
   buildChart("chartVoo", "voo", "VOO", COLORS.voo);
@@ -387,6 +388,49 @@ function renderWalkForward() {
   const caveat = ` <span class="muted">참고: 이 구간(2023~)엔 큰 폭락이 없어서, 공포 신호 같은 방어 전략이 진짜 빛나는 '폭락 회피' 기회 자체가 없었어요. 다음 폭락장에선 결론이 또 달라질 수 있습니다.</span>`;
   const picks = a.picks.map((p) => `${p.from.slice(0, 7)} → ${({ safehaven: "안전자산", combo: "복합", fng: "종합", putcall: "풋/콜", momentum: "모멘텀" })[p.key] || p.key}(상위 ${Math.round(p.X * 100)}%)`).join("  ·  ");
   $("wfPicks").innerHTML = `<div class="verdict">${verdict}${caveat}</div><b>참고 — 자동선택이 매 구간 고른 지표:</b> ${picks}`;
+}
+
+function renderDCA() {
+  const x = DATA.dca;
+  if (!x) return;
+  const won = `$${x.contributed.toLocaleString()}`;
+  $("dcaNote").innerHTML =
+    `대부분의 사람이 실제로 하는 방식이에요: <b>매달 $${x.monthly.toLocaleString()}씩 ${x.months}개월 꾸준히 투자</b>(총 ${won}). `
+    + `여기에 "<b>매달 ${Math.round(x.saveFraction * 100)}%는 안 쓰고 모아뒀다가, 진짜 공포가 오면(상위 ${Math.round(x.dipPercentile * 100)}%) 한 번에 몰아넣기</b>"를 더하면 더 나은지 봅니다. `
+    + `<b>투입한 총액은 네 방식 모두 똑같아요</b> — 타이밍만 다릅니다. (IRR = 연환산 수익률)`;
+
+  const money = (v) => `$${v.toLocaleString()}`;
+  const best = { voo: Math.max(...x.rows.map((r) => r.voo.finalValue)), tqqq: Math.max(...x.rows.map((r) => r.tqqq.finalValue)) };
+  const head = `<tr><th>방식</th>
+    <th>VOO 최종</th><th>VOO 수익</th><th>VOO IRR</th><th>VOO MDD</th>
+    <th>TQQQ 최종</th><th>TQQQ IRR</th><th>TQQQ MDD</th></tr>`;
+  const body = x.rows.map((r) => {
+    const bv = r.voo.finalValue === best.voo, bt = r.tqqq.finalValue === best.tqqq;
+    return `<tr>
+      <td>${r.label}${r.key === "plain" ? " <span class='muted small'>(기준)</span>" : ""}</td>
+      <td style="${bv ? "font-weight:700;color:var(--buy)" : ""}">${money(r.voo.finalValue)}</td>
+      <td class="${cls(r.voo.gainPct)}">${pct(r.voo.gainPct)}</td>
+      <td>${r.voo.irrPct}%</td><td class="neg">-${r.voo.maxDrawdownPct}%</td>
+      <td style="${bt ? "font-weight:700;color:var(--buy)" : ""}">${money(r.tqqq.finalValue)}</td>
+      <td>${r.tqqq.irrPct}%</td><td class="neg">-${r.tqqq.maxDrawdownPct}%</td></tr>`;
+  }).join("");
+  $("dca").innerHTML = `<div class="scrolltable"><table class="rank">${head}${body}</table></div>`;
+
+  // verdict: did fear-timing meaningfully beat plain DCA?
+  const plain = x.rows.find((r) => r.key === "plain");
+  const others = x.rows.filter((r) => r.key !== "plain");
+  const bestOtherVoo = Math.max(...others.map((r) => r.voo.gainPct));
+  const bestOtherTqqq = Math.max(...others.map((r) => r.tqqq.gainPct));
+  const dVoo = (bestOtherVoo - plain.voo.gainPct).toFixed(1);
+  const dTqqq = (bestOtherTqqq - plain.tqqq.gainPct).toFixed(1);
+  const tiny = Math.abs(bestOtherVoo - plain.voo.gainPct) < 3 && Math.abs(bestOtherTqqq - plain.tqqq.gainPct) < 8;
+  const el = $("dcaVerdict");
+  el.style.display = "block";
+  el.innerHTML = tiny
+    ? `<b>평결: 거의 차이가 없어요.</b> 공포 타이밍을 더해도 가장 좋은 경우가 순수 적립식보다 VOO ${dVoo}p, TQQQ ${dTqqq}p 차이 — 사실상 오차 범위입니다. `
+      + `<b>그냥 매달 꾸준히 사는 것</b>이, 현금을 들고 공포를 기다리는 것만큼(혹은 그 이상) 좋았다는 뜻이에요. 게다가 적립식이 훨씬 마음 편하고 단순하죠. `
+      + `<span class="muted">단, 이 기간엔 깊은 폭락이 드물었어요. 큰 폭락장이 오면 '현금 모아뒀다 줍줍'이 더 빛날 수 있습니다.</span>`
+    : `공포매수가 순수 적립식보다 VOO ${dVoo}p, TQQQ ${dTqqq}p 더 나았어요. 다만 그만큼 현금을 들고 기다리는 인내가 필요합니다.`;
 }
 
 function renderBacktest() {

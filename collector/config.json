@@ -22,5 +22,11 @@
     "comboMinGreed": 2,
     "scaledLoFear": 0.4,
     "scaledHiFear": 0.9
+  },
+
+  "dca": {
+    "monthly": 1000,
+    "saveFraction": 0.4,
+    "dipPercentile": 0.15
   }
 }

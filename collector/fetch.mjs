@@ -431,6 +431,70 @@ function computeScaled(series, cfg, pctMap) {
     note: `분할매수: 공포 백분위가 ${Math.round(lo * 100)}% 미만이면 현금, ${Math.round(hi * 100)}%↑면 100% 투자, 그 사이는 비례 배분(매일 리밸런싱). '전량'은 같은 신호로 올인/올아웃.` };
 }
 
+// ---- Dollar-cost averaging: plain vs "save reserve, buy the fear" ------
+function irrAnnual(flows) { // flows: [{t: monthIndex, amt}], solve monthly rate
+  const npv = (r) => flows.reduce((s, f) => s + f.amt / Math.pow(1 + r, f.t), 0);
+  let lo = -0.95, hi = 2.0;
+  if (npv(lo) * npv(hi) > 0) return null;
+  for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; const v = npv(mid); if (Math.abs(v) < 0.01) { lo = hi = mid; break; } if (npv(lo) * v < 0) hi = mid; else lo = mid; }
+  const m = (lo + hi) / 2;
+  return round1((Math.pow(1 + m, 12) - 1) * 100);
+}
+
+function dcaBacktest(series, asset, monthlyC, fearPct, buyP, saveFrac) {
+  let shares = 0, reserve = 0, contributed = 0, lastPrice = null, mIdx = -1;
+  let prevMonth = null;
+  const curve = [], flows = [];
+  for (let i = 0; i < series.length; i++) {
+    const px = series[i][asset];
+    if (px == null) continue;
+    lastPrice = px;
+    const ym = series[i].date.slice(0, 7);
+    if (ym !== prevMonth) { // new month → contribute fixed amount
+      prevMonth = ym; mIdx++;
+      contributed += monthlyC; flows.push({ t: mIdx, amt: -monthlyC });
+      if (!fearPct) shares += monthlyC / px;
+      else { shares += (monthlyC * (1 - saveFrac)) / px; reserve += monthlyC * saveFrac; }
+    }
+    if (fearPct) { const p = fearPct[i]; if (p != null && p >= buyP && reserve > 0) { shares += reserve / px; reserve = 0; } }
+    curve.push(shares * px + reserve);
+  }
+  if (curve.length < 2 || contributed === 0) return null;
+  const finalVal = shares * lastPrice + reserve;
+  flows.push({ t: mIdx, amt: finalVal });
+  let peak = -Infinity, mdd = 0;
+  for (const v of curve) { if (v > peak) peak = v; if (peak > 0) { const dd = (peak - v) / peak; if (dd > mdd) mdd = dd; } }
+  return {
+    contributed: Math.round(contributed), finalValue: Math.round(finalVal),
+    gainPct: round1(((finalVal - contributed) / contributed) * 100),
+    irrPct: irrAnnual(flows), maxDrawdownPct: round1(mdd * 100),
+    leftoverCashPct: round1((reserve / finalVal) * 100), months: mIdx + 1,
+  };
+}
+
+function computeDCA(series, cfg, pctMap) {
+  const d = cfg.dca || { monthly: 1000, saveFraction: 0.4, dipPercentile: 0.15 };
+  const buyP = 1 - d.dipPercentile;
+  const comboArr = comboPctArray(series, pctMap, cfg.strategyTest.comboKeys);
+  const sources = [
+    { key: "plain", label: "순수 적립식 (매달 같은 금액)", arr: null },
+    { key: "fng", label: "적립식 + 공포매수 (종합지수)", arr: pctMap.fng },
+    { key: "safehaven", label: "적립식 + 공포매수 (안전자산)", arr: pctMap.safehaven },
+    { key: "combo", label: "적립식 + 공포매수 (복합)", arr: comboArr },
+  ];
+  const rows = sources.map((s) => ({
+    key: s.key, label: s.label,
+    voo: dcaBacktest(series, "voo", d.monthly, s.arr, buyP, d.saveFraction),
+    tqqq: dcaBacktest(series, "tqqq", d.monthly, s.arr, buyP, d.saveFraction),
+  })).filter((r) => r.voo && r.tqqq);
+  return {
+    monthly: d.monthly, saveFraction: d.saveFraction, dipPercentile: d.dipPercentile,
+    months: rows[0]?.voo.months ?? 0, contributed: rows[0]?.voo.contributed ?? 0,
+    rows,
+    note: `매달 $${d.monthly}씩 ${rows[0]?.voo.months ?? 0}개월 투입(총 $${(rows[0]?.voo.contributed ?? 0).toLocaleString()}, 모든 방식 동일). '공포매수'는 매달 ${Math.round(d.saveFraction * 100)}%를 현금으로 모아뒀다가, 공포 상위 ${Math.round(d.dipPercentile * 100)}%에 들어가면 그 현금을 한 번에 투입.`,
+  };
+}
+
 // ---- Walk-forward: optimize on past, apply to unseen future -----------
 function computeWalkForward(series, cfg, pctMap) {
   const initial = cfg.backtest.initialCash;
@@ -594,6 +658,7 @@ async function main() {
     sensitivity: computeSensitivity(series, cfg, pctMap),
     scaled: computeScaled(series, cfg, pctMap),
     walkForward: computeWalkForward(series, cfg, pctMap),
+    dca: computeDCA(series, cfg, pctMap),
     series,
     errors,
   };
