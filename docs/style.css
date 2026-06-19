@@ -66,6 +66,18 @@ h2 { font-size: 1.0rem; margin: 0 0 10px; }
 .prevstats .k { color: var(--muted); }
 .prevstats .v { font-weight: 600; }
 
+/* help / explanations */
+.help summary { cursor: pointer; font-weight: 700; font-size: 1rem; }
+.help summary::marker { color: var(--muted); }
+.helpbody { margin-top: 10px; font-size: .9rem; line-height: 1.65; }
+.helpbody p { margin: 8px 0; }
+.helpbody .takeaway { background: rgba(91,141,239,.12); border-left: 3px solid var(--neutral); padding: 8px 10px; border-radius: 8px; }
+.helpbody .terms { margin: 6px 0 0; padding-left: 18px; }
+.helpbody .terms li { margin: 6px 0; }
+.verdict { background: rgba(91,141,239,.12); border-left: 3px solid var(--neutral); padding: 8px 10px; border-radius: 8px; margin-bottom: 8px; line-height: 1.55; }
+.z-fear { color: var(--buy); font-weight: 700; }
+.z-greed { color: var(--sell); font-weight: 700; }
+
 /* indicator selector */
 .seltitle { margin: 2px 2px 8px; }
 .scrollx { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }

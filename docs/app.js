@@ -11,6 +11,18 @@ let currentDays = 365;
 let currentInd = "fng";
 let IND = {}; // key -> indicator meta
 
+// plain-language explanation of each indicator
+const INDDESC = {
+  fng: "CNN이 아래 7개를 합쳐 만든 0~100 점수예요. 0에 가까우면 다들 패닉(극도의 공포), 100에 가까우면 다들 들떠 있음(극도의 탐욕).",
+  momentum: "S&P500이 자기 평균선(최근 125일)보다 얼마나 위/아래에 있는지. 위로 멀수록 상승 분위기(탐욕), 아래로 가면 침체(공포).",
+  strength: "신고가를 찍는 종목 vs 신저가를 찍는 종목 수. 신고가가 많을수록 시장이 튼튼하다는 뜻(탐욕).",
+  breadth: "오르는 종목들의 거래량 vs 내리는 종목들의 거래량. 폭넓게 오르면 탐욕, 소수만 끌고 가면 공포.",
+  putcall: "하락에 거는 돈(풋) vs 상승에 거는 돈(콜)의 비율. 풋이 많아질수록 다들 겁먹었다는 신호(공포).",
+  volatility: "흔히 '공포지수'라 부르는 VIX. 값이 높을수록 시장이 출렁이고 불안하다는 뜻(공포).",
+  safehaven: "최근 20일간 주식 수익에서 채권 수익을 뺀 값. 주식이 채권보다 많이 빠지면 다들 안전한 채권으로 도망친 것(공포).",
+  junkbond: "위험한 회사채(정크본드)와 안전한 채권의 금리 차이. 이 차이가 벌어질수록 위험을 피하려는 분위기(공포).",
+};
+
 const $ = (id) => document.getElementById(id);
 const fmtNum = (n, d = 0) => (n == null ? "—" : Number(n).toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d }));
 const fmtVal = (n) => (n == null ? "—" : Number(n).toLocaleString("en-US", { maximumFractionDigits: 3 }));
@@ -152,8 +164,9 @@ function render() {
   const dirGreed = ind.direction === "greedUp";
   const dirTxt = dirGreed ? "값이 <span class='dir greed'>높을수록 ▲ 탐욕(과열)</span>" : "값이 <span class='dir fear'>높을수록 ▼ 공포(과매도)</span>";
   const nowVal = normalized ? `지수 <span class='now'>${ind.currentScore}</span>` : `현재값 <span class='now'>${fmtVal(ind.currentValue)}</span> · 지표점수 ${ind.currentScore}`;
-  $("indInfo").innerHTML = `<b>${ind.label}</b><br>${nowVal} (${ratingKo(ind.currentRating)}) · ${dirTxt}`
-    + (normalized ? "" : "<br><span class='muted small'>원시값을 자체 축에 표시(0~100 점수 아님). 초록/빨강 음영·임계선은 종합지수에만 적용됩니다.</span>");
+  const desc = INDDESC[currentInd] ? `<br><span class='muted small'>${INDDESC[currentInd]}</span>` : "";
+  $("indInfo").innerHTML = `<b>${ind.label}</b><br>${nowVal} (${ratingKo(ind.currentRating)}) · ${dirTxt}${desc}`
+    + (normalized ? "" : "<br><span class='muted small'>※ 이 지표는 원시값을 그대로 보여줘요(0~100 점수 아님). 공포/탐욕 음영과 ▲▼ 신호는 '종합' 지수에서만 표시됩니다.</span>");
 
   $("hVoo").textContent = `VOO  vs  ${ind.label}`;
   $("hTqqq").textContent = `TQQQ  vs  ${ind.label}`;
@@ -191,11 +204,13 @@ function render() {
 function renderAnalysis() {
   const a = DATA.analysis;
   if (!a) return;
-  $("anNote").textContent = a.note;
+  $("anNote").innerHTML =
+    `각 지표가 <b>"공포"를 가리킬 때</b>, 그 뒤 1주·1달·3달 동안 주가가 <b>실제로 올랐는지</b> 따져본 거예요. `
+    + `한마디로 "이 지표가 겁먹으라고 할 때 사두면 정말 이득이었나?"를 점수로 매긴 겁니다.`;
   $("anFoot").innerHTML =
-    `읽는 법: 숫자는 상관계수(−1~+1). <b>양수가 클수록</b> "그 지표가 공포를 가리킬 때 이후 가격이 올랐다"는 뜻 → 역발상 매수에 의미 있는 지표. `
-    + `<b>음수</b>면 반대(추세 지속 쪽). 0.2 이상이면 약하게나마 의미 있는 편. `
-    + `<span class="muted">(설명용 통계 · 구간 중첩으로 과대평가 가능 · n≈${a.rows[0]?.n ?? "?"})</span>`;
+    `읽는 법: 숫자는 −1~+1 사이. <b>+(초록)가 클수록</b> "공포일 때 사두면 이후 올랐다" → 쓸모 있는 지표예요. `
+    + `<b>0이면</b> 별 관계 없음, <b>−(빨강)면</b> 오히려 반대(공포가 더 깊어지는 쪽). 대략 0.2 넘으면 약하게나마 의미 있는 편입니다. `
+    + `<span class="muted">단, 설명용 통계라 실제보다 부풀려 보일 수 있어요(표본 약 5년).</span>`;
 
   const H = a.horizons; // [{k,label,days}]
   const head = `<tr><th>지표</th><th>방향</th><th>종합</th>`
@@ -228,10 +243,13 @@ function renderAnalysis() {
 function renderStrategy() {
   const st = DATA.strategyTest;
   if (!st) return;
-  $("stNote").textContent = st.note;
+  $("stNote").innerHTML =
+    `각 지표로 <b>실제로 사고팔았다면</b> 어땠을지 5년치로 돌려본 결과예요. `
+    + `규칙은 "최근 1년 기준 가장 공포스러운 축(상위 15%)에 들어가면 사고, 가장 탐욕스러울 때(하위 15%)가 한동안 이어지면 판다". `
+    + `<b>맨 윗줄 ⭐가 과거 기준 1등</b>, <b>'단순보유(기준)'가 넘어야 할 선</b>이에요.`;
   $("stFoot").innerHTML =
-    `Calmar = 수익률 ÷ 최대낙폭 (클수록 효율적). <b>단순보유보다 Calmar가 높으면</b> 그 신호로 타이밍 잡는 게 의미 있었다는 뜻. `
-    + `<span class="muted">주의: 복합 신호는 같은 데이터로 고른 거라 과최적화 가능 · 백분위 전략은 첫 1년은 신호 없음(워밍업) · 과거 성과가 미래를 보장하지 않음.</span>`;
+    `초록 테두리 = 단순보유보다 효율(Calmar)이 좋았던 전략. `
+    + `<span class="muted">주의: 🧩복합 신호는 같은 데이터를 보고 고른 거라 실제보다 좋아 보일 수 있어요. 그리고 이건 "과거에 그랬다"는 얘기지 미래 보장은 아닙니다 — 아래 '워크포워드'에서 진짜 검증해요.</span>`;
 
   const calCell = (c) => {
     if (c == null) return `<td>—</td>`;
@@ -273,7 +291,10 @@ function calmarCell(c, scale = 5, bold = true) {
 function renderSensitivity() {
   const se = DATA.sensitivity;
   if (!se) return;
-  $("seNote").textContent = se.note;
+  $("seNote").innerHTML =
+    `위에서 1등이 <b>진짜 실력인지 운인지</b> 확인하는 표예요. 매수 기준(공포 상위 몇 %)을 10%부터 30%까지 바꿔보면서 점수가 어떻게 변하나 봅니다. `
+    + `<b>어느 칸에서도 점수가 고르게 높으면 진짜 실력</b>, 딱 한 칸만 튀고 나머지는 별로면 "운빨(과최적화)"이에요. `
+    + `<span class="muted">셀 = VOO의 Calmar, 괄호 = TQQQ.</span>`;
   const cols = se.grid.map((x) => `공포 상위 ${Math.round(x * 100)}%`);
   const head = `<tr><th>전략</th>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
   const body = se.rows.map((r) => {
@@ -292,7 +313,10 @@ function renderSensitivity() {
 function renderScaled() {
   const sc = DATA.scaled;
   if (!sc) return;
-  $("scNote").textContent = sc.note;
+  $("scNote").innerHTML =
+    `전 재산을 한 번에 넣었다 빼는(<b>전량</b>) 대신, <b>공포가 깊을수록 조금씩 더 사는(분할)</b> 방식이 나은지 비교해요. `
+    + `여기선 "별로 안 무서우면 현금, 아주 무서우면 100%, 그 사이는 비례해서" 매일 조금씩 조절합니다. `
+    + `<span class="muted">숫자 = Calmar.</span>`;
   const head = `<tr><th>전략</th>
     <th>VOO 전량</th><th>VOO 분할</th>
     <th>TQQQ 전량</th><th>TQQQ 분할</th><th>분할 평균노출</th></tr>`;
@@ -317,7 +341,10 @@ function renderScaled() {
 function renderWalkForward() {
   const w = DATA.walkForward;
   if (!w) { return; }
-  $("wfNote").textContent = w.note;
+  $("wfNote").innerHTML =
+    `<b>가장 정직한 검증이에요.</b> 위 표들은 "지난 5년 시험지를 다 펴놓고 제일 잘 맞는 답을 고른 것"이라 당연히 좋아 보입니다. `
+    + `여기선 그렇게 안 해요 — <b>앞 2년만 보고 규칙을 정한 뒤, 한 번도 안 본 다음 구간에 그대로 적용</b>하고, 6개월마다 이걸 반복합니다. `
+    + `즉 <b>"실제로 그때그때 굴렸으면 미래에 통했을까?"</b>를 봅니다. 여기서도 단순보유를 이겨야 진짜죠.`;
 
   const bv = w.benchmark.voo, bt = w.benchmark.tqqq;
   $("wfBench").innerHTML =
@@ -352,9 +379,14 @@ function renderWalkForward() {
 
   $("walkforward").innerHTML = `<div class="scrolltable"><table class="rank">${head}${rows}${autoRow}</table></div>`;
 
-  // which indicator the auto-picker chose each period
+  // plain verdict + which indicator the auto-picker chose each period
+  const beatList = w.perIndicator.filter((r) => r.oosVoo && r.oosVoo.calmar >= bv.calmar).map((r) => r.label);
+  const verdict = beatList.length
+    ? `<b>평결:</b> 위험조정(Calmar) 기준으로 단순보유를 넘은 건 <b>${beatList.join(", ")}</b> 정도뿐이고, 그마저 <b>총수익은 단순보유보다 적었어요</b>. 즉 "더 안전했지만 덜 벌었다". 이 강세장 구간에선 그냥 보유가 사실상 최강이었습니다.`
+    : `<b>평결:</b> 이 검증 구간에선 <b>어떤 전략도 '그냥 보유'를 뚜렷이 이기지 못했어요.</b> 강세장에선 현금 들고 기다리는 시간이 곧 손해라서요.`;
+  const caveat = ` <span class="muted">참고: 이 구간(2023~)엔 큰 폭락이 없어서, 공포 신호 같은 방어 전략이 진짜 빛나는 '폭락 회피' 기회 자체가 없었어요. 다음 폭락장에선 결론이 또 달라질 수 있습니다.</span>`;
   const picks = a.picks.map((p) => `${p.from.slice(0, 7)} → ${({ safehaven: "안전자산", combo: "복합", fng: "종합", putcall: "풋/콜", momentum: "모멘텀" })[p.key] || p.key}(상위 ${Math.round(p.X * 100)}%)`).join("  ·  ");
-  $("wfPicks").innerHTML = `<b>자동선택이 매 구간 고른 지표:</b> ${picks}`;
+  $("wfPicks").innerHTML = `<div class="verdict">${verdict}${caveat}</div><b>참고 — 자동선택이 매 구간 고른 지표:</b> ${picks}`;
 }
 
 function renderBacktest() {
