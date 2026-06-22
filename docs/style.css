@@ -89,6 +89,23 @@ h2 { font-size: 1.0rem; margin: 0 0 10px; }
 .indinfo .dir.fear { color: var(--buy); }      /* fear = 매수쪽 = green */
 .indinfo .now { color: var(--fng); font-weight: 700; }
 
+/* put/call action playbook */
+.blsub { font-size: .95rem; margin: 16px 0 6px; }
+.tier {
+  border: 1px solid var(--line); border-left: 4px solid var(--muted);
+  border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: var(--card2);
+}
+.tier-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tier-range { font-weight: 700; font-size: .9rem; }
+.tier-tag { font-size: .75rem; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--text); }
+.tier-now { font-size: .75rem; font-weight: 700; color: var(--bg); background: var(--fng); padding: 2px 8px; border-radius: 999px; margin-left: auto; }
+.tier-name { font-size: .82rem; color: var(--muted); margin: 3px 0 5px; }
+.tier-action { font-size: .88rem; line-height: 1.55; }
+.tier.t-mild { border-left-color: #f0b429; }
+.tier.t-strong { border-left-color: #2ecc71; }
+.tier.t-max { border-left-color: #1abc9c; }
+.tier.active { background: rgba(240,180,41,.10); border-color: var(--fng); box-shadow: 0 0 0 1px var(--fng) inset; }
+
 /* range buttons */
 .ranges { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .ranges button {

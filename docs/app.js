@@ -293,6 +293,34 @@ function renderBuyLevels() {
       + `<b>1.00을 넘으면</b> 표본은 적지만 승률이 거의 100%에 가깝습니다. `
       + `<span class="muted">즉 "풋이 콜보다 많아질수록(공포가 깊을수록) 더 공격적으로 사라"가 과거엔 잘 통했어요. 단 표본이 최근 ~5년이라 다음 폭락장에선 다를 수 있습니다.</span>`
     : `풋/콜 수치가 높을수록 이후 수익이 좋아지는 경향이 있어요.`;
+
+  // ---- action playbook: tiers by raw put/call, highlight current tier ----
+  $("blStratNote").innerHTML =
+    `핵심 아이디어: <b>평소엔 매달 정해진 금액만 사고, 그와 별도로 "예비 현금"을 모아둡니다.</b> `
+    + `그러다 풋/콜이 아래 단계에 들어오면 그 현금을 단계에 맞게 투입하는 거예요 — <b>공포가 깊을수록 더 크게.</b> `
+    + `(파는 건 이 지표가 아니라 위쪽 '탐욕 ${DATA.config.sellThreshold} 지속' 규칙으로 판단)`;
+
+  const tiers = [
+    { lo: 0, hi: 0.80, name: "평상시", tag: "평소대로", cls: "t-calm",
+      action: "추가 매수 없이 <b>정해둔 적립(매달 같은 금액)만</b> 유지. 현금은 다음 공포를 위해 계속 모아둡니다." },
+    { lo: 0.80, hi: 0.90, name: "약한 공포", tag: "조금 더", cls: "t-mild",
+      action: "예비 현금의 <b>약 1/3</b>을 추가 투입. 아직 확신 구간은 아니라 가볍게 발만 담급니다." },
+    { lo: 0.90, hi: 1.00, name: "강한 공포 ⭐", tag: "적극 매수", cls: "t-strong",
+      action: "예비 현금의 <b>절반~2/3</b>를 투입. 과거 3달 뒤 승률이 확 올라간(≈89%) <b>핵심 줍줍 구간</b>이에요." },
+    { lo: 1.00, hi: 99, name: "극단적 공포", tag: "최대 매수", cls: "t-max",
+      action: "<b>남은 현금을 거의 전부</b>, 단 한 번에 말고 <b>며칠에 나눠</b> 투입. 표본은 적지만 이후 거의 항상 반등했어요(승률 ≈95%)." },
+  ];
+  const inTier = (t) => cur != null && cur >= t.lo && cur < t.hi;
+  $("blStrategy").innerHTML = tiers.map((t) => {
+    const here = inTier(t);
+    const range = t.hi >= 99 ? `≥ ${t.lo.toFixed(2)}` : `${t.lo === 0 ? "< " + t.hi.toFixed(2) : t.lo.toFixed(2) + " ~ " + t.hi.toFixed(2)}`;
+    return `<div class="tier ${t.cls}${here ? " active" : ""}">
+      <div class="tier-head"><span class="tier-range">풋/콜 ${range}</span>
+        <span class="tier-tag">${t.tag}</span>${here ? `<span class="tier-now">지금 여기 (${fmtVal(cur)})</span>` : ""}</div>
+      <div class="tier-name">${t.name}</div>
+      <div class="tier-action">${t.action}</div></div>`;
+  }).join("")
+    + `<p class="muted small" style="margin-top:10px">※ 투입 비율(1/3, 1/2 등)은 과거 데이터에 기반한 <b>예시 가이드</b>일 뿐 정답이 아니에요. 핵심 원칙은 <b>"공포가 깊을수록 더 공격적으로, 한 번에 말고 나눠서"</b>. 표본이 최근 약 5년이라 큰 폭락장에선 결과가 달라질 수 있습니다.</p>`;
 }
 
 function renderStrategy() {
