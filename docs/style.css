@@ -14,6 +14,7 @@
   --fng: #f0b429;
 }
 * { box-sizing: border-box; }
+html, body { width: 100%; max-width: 100%; }
 body {
   margin: 0;
   overflow-x: hidden;
@@ -23,7 +24,7 @@ body {
     "Malgun Gothic", sans-serif;
   -webkit-text-size-adjust: 100%;
 }
-main { max-width: 880px; margin: 0 auto; padding: 16px 14px 40px; }
+main { width: 100%; max-width: 880px; margin: 0 auto; padding: 16px 14px 40px; }
 header { margin-bottom: 12px; }
 h1 { font-size: 1.25rem; margin: 0 0 2px; }
 h2 { font-size: 1.0rem; margin: 0 0 10px; }
@@ -100,11 +101,15 @@ h2 { font-size: 1.0rem; margin: 0 0 10px; }
 /* charts */
 .chartbox { position: relative; height: 320px; }
 @media (max-width: 560px) {
+  /* use more of the screen width on phones — stretch content toward edges */
+  main { padding: 12px 9px 32px; }
+  .card { padding: 14px 12px; border-radius: 12px; }
   .chartbox { height: 260px; }
   .score { font-size: 2.4rem; }
   .hero { flex-direction: column; align-items: stretch; }
-  .gauge { flex: 0 0 auto; }
-  .prevstats { width: 100%; }
+  .gauge { flex: 0 0 auto; width: 100%; min-width: 0; }
+  .prevstats { flex: 0 0 auto; width: 100%; }
+  .ranges button { min-width: 0; }   /* let 5 range buttons share full width evenly */
 }
 
 /* backtest table */
@@ -113,6 +118,8 @@ th, td { padding: 8px 6px; text-align: right; border-bottom: 1px solid var(--lin
 th:first-child, td:first-child { text-align: left; }
 thead th { color: var(--muted); font-weight: 600; }
 .scrolltable { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table.bt { min-width: 480px; }
+table.bt th, table.bt td { white-space: nowrap; }
 table.rank { min-width: 560px; font-size: .82rem; }
 table.rank th, table.rank td { padding: 7px 6px; white-space: nowrap; text-align: center; border-bottom: 1px solid var(--line); }
 table.rank th:first-child, table.rank td:first-child { text-align: left; position: sticky; left: 0; background: var(--card); z-index: 1; }

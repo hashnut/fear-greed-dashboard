@@ -45,6 +45,7 @@ async function init() {
   if (IND[hash]) currentInd = hash;
   renderHeader();
   renderAnalysis();
+  renderBuyLevels();
   renderStrategy();
   renderSensitivity();
   renderScaled();
@@ -239,6 +240,59 @@ function renderAnalysis() {
   }).join("");
 
   $("ranking").innerHTML = `<div class="scrolltable"><table class="rank">${head}${body}</table></div>`;
+}
+
+function renderBuyLevels() {
+  const b = DATA.buyLevels;
+  if (!b) return;
+  $("blNote").innerHTML =
+    `풋/콜은 위 랭킹에서 <b>미래 수익과 가장 잘 맞았던 지표</b>예요(특히 3달 뒤). `
+    + `그래서 "백분위" 같은 추상적인 말 대신 <b>실제 풋/콜 수치 얼마부터 사면 좋았나</b>를 전 기간으로 따져봤습니다. `
+    + `'아무 때나'(전체 평균)보다 <b>수익도 높고 승률(이긴 비율)도 높을수록</b> 그 수치가 진짜 '줍줍' 구간이에요.`;
+
+  // forward-return cell: mean% (big) + win-rate (small), green tint by mean
+  const cell = (s) => {
+    if (!s) return `<td>—</td>`;
+    const mag = Math.min(Math.max(s.meanPct, 0) / 10, 1);
+    const bg = `rgba(46,204,113,${(mag * 0.5).toFixed(2)})`;
+    return `<td style="background:${bg}"><b>${pct(s.meanPct)}</b><br><span class="muted small">승률 ${s.hitPct.toFixed(0)}%</span></td>`;
+  };
+
+  const head = `<tr><th>매수 기준</th><th>해당 빈도</th>
+    <th>VOO 1달</th><th>VOO 3달</th><th>TQQQ 1달</th><th>TQQQ 3달</th></tr>`;
+  const baseRow = `<tr style="opacity:.85">
+    <td>아무 때나 <span class="muted small">(기준)</span></td>
+    <td class="muted small">전체</td>
+    ${cell(b.baseline.voo.m)}${cell(b.baseline.voo.q)}${cell(b.baseline.tqqq.m)}${cell(b.baseline.tqqq.q)}</tr>`;
+  const rows = b.rows.map((r) => {
+    const topPct = Math.round(100 - r.pctl); // "top X% most fearful"
+    const strong = r.threshold === b.strongThreshold;
+    return `<tr style="${strong ? "outline:1px solid rgba(46,204,113,.45)" : ""}">
+      <td><b>풋/콜 ≥ ${r.threshold.toFixed(2)}</b>${strong ? " ⭐" : ""}</td>
+      <td class="muted small">${r.days}일<br>(상위 ${topPct}%)</td>
+      ${cell(r.voo.m)}${cell(r.voo.q)}${cell(r.tqqq.m)}${cell(r.tqqq.q)}</tr>`;
+  }).join("");
+  $("buylevels").innerHTML = `<div class="scrolltable"><table class="rank">${head}${baseRow}${rows}</table></div>`
+    + `<p class="muted small" style="margin-top:8px">셀 = 그 수치일 때 산 뒤 평균 수익, 아래 작은 글씨 = 이긴 비율(승률). 위로 갈수록(풋/콜이 높을수록) 다들 겁먹은 상태 → 역사적으로 그 뒤 더 잘 올랐어요. ⭐ = 승률이 확 높아지는 분기점.</p>`;
+
+  // current value callout
+  const cur = b.current;
+  const st = b.strongThreshold;
+  const where = cur == null ? "" :
+    cur >= 1.0 ? `<span class="dir fear">아주 깊은 공포 — 역사적으로 '거의 안 졌던' 구간</span>이에요.`
+    : cur >= (st ?? 0.9) ? `<span class="dir fear">유리한 매수 구간(≥${(st ?? 0.9).toFixed(2)})</span>에 들어와 있어요.`
+    : cur >= 0.80 ? `약한 공포예요. 더 확실히 사려면 <b>${(st ?? 0.9).toFixed(2)} 이상</b>을 기다려볼 만합니다.`
+    : `평범하거나 탐욕 쪽이에요. 풋/콜만 보면 <b>아직 줍줍 타이밍은 아님</b> — ${(st ?? 0.9).toFixed(2)} 이상에서 빛났어요.`;
+  $("blNow").innerHTML = `<b>지금 풋/콜 = <span class="now">${fmtVal(cur)}</span></b> (전 기간 ${b.min}~${b.max}). ${where}`;
+
+  // verdict
+  const strongRow = b.rows.find((r) => r.threshold === st);
+  $("blVerdict").innerHTML = st && strongRow
+    ? `<b>결론:</b> 풋/콜이 <b>${st.toFixed(2)}을 넘으면</b> 3달 뒤 VOO가 평균 <b>${pct(strongRow.voo.q.meanPct)}</b> (승률 <b>${strongRow.voo.q.hitPct.toFixed(0)}%</b>), `
+      + `TQQQ는 <b>${pct(strongRow.tqqq.q.meanPct)}</b>로 — '아무 때나'(VOO ${pct(b.baseline.voo.q.meanPct)})보다 확실히 좋았어요. `
+      + `<b>1.00을 넘으면</b> 표본은 적지만 승률이 거의 100%에 가깝습니다. `
+      + `<span class="muted">즉 "풋이 콜보다 많아질수록(공포가 깊을수록) 더 공격적으로 사라"가 과거엔 잘 통했어요. 단 표본이 최근 ~5년이라 다음 폭락장에선 다를 수 있습니다.</span>`
+    : `풋/콜 수치가 높을수록 이후 수익이 좋아지는 경향이 있어요.`;
 }
 
 function renderStrategy() {
@@ -446,7 +500,7 @@ function renderBacktest() {
     if (!b) continue;
     const t = document.createElement("div");
     t.innerHTML = `<div class="bt-title">${name}</div>
-      <table><thead><tr><th></th><th>최종자산</th><th>수익률</th><th>연복리</th><th>최대낙폭</th><th>매매</th><th>투자비중</th></tr></thead>
+      <div class="scrolltable"><table class="bt"><thead><tr><th></th><th>최종자산</th><th>수익률</th><th>연복리</th><th>최대낙폭</th><th>매매</th><th>투자비중</th></tr></thead>
       <tbody>
         <tr><td>전략</td><td>$${fmtNum(b.strategy.final)}</td>
           <td class="${cls(b.strategy.returnPct)}">${pct(b.strategy.returnPct)}</td>
@@ -458,7 +512,7 @@ function renderBacktest() {
           <td class="${cls(b.buyHold.cagrPct)}">${pct(b.buyHold.cagrPct)}</td>
           <td class="neg">-${b.buyHold.maxDrawdownPct}%</td>
           <td>1</td><td>100%</td></tr>
-      </tbody></table>`;
+      </tbody></table></div>`;
     box.appendChild(t);
   }
 }

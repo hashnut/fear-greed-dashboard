@@ -245,6 +245,59 @@ function computeAnalysis(series) {
   };
 }
 
+// ---- Buy-level guide: forward returns at RAW value thresholds ----------
+// Answers "at what actual indicator value is it worth buying?" For a
+// fear-oriented indicator (default put/call), we bucket days by raw-value
+// threshold and measure the average forward return + win-rate, compared to
+// the all-days baseline. No percentile abstraction — concrete numbers.
+function computeBuyLevels(series, focusKey = "putcall", thresholds = [0.70, 0.80, 0.90, 1.00]) {
+  const def = COMPONENTS.find((c) => c.key === focusKey);
+  if (!def || def.direction !== "fearUp") return null;
+  const HOR = [{ k: "w", label: "1주", days: 5 }, { k: "m", label: "1달", days: 21 }, { k: "q", label: "3달", days: 63 }];
+  const seq = { voo: series.filter((r) => r.voo != null), tqqq: series.filter((r) => r.tqqq != null) };
+
+  // forward-return stats over days whose focus value >= thr (thr=null => all days)
+  const stat = (asset, thr) => {
+    const s = seq[asset]; const out = {};
+    for (const h of HOR) {
+      const rs = [];
+      for (let i = 0; i + h.days < s.length; i++) {
+        const v = s[i][focusKey];
+        if (v == null || (thr != null && v < thr)) continue;
+        rs.push(s[i + h.days][asset] / s[i][asset] - 1);
+      }
+      if (!rs.length) { out[h.k] = null; continue; }
+      const mean = rs.reduce((a, b) => a + b, 0) / rs.length;
+      const hit = rs.filter((x) => x > 0).length / rs.length;
+      out[h.k] = { n: rs.length, meanPct: round1(mean * 100), hitPct: round1(hit * 100) };
+    }
+    return out;
+  };
+
+  const vals = series.map((r) => r[focusKey]).filter((v) => v != null).sort((a, b) => a - b);
+  if (vals.length < 100) return null;
+  const pctlOf = (t) => round1((vals.filter((v) => v <= t).length / vals.length) * 100); // how rare is this level
+  const current = series.filter((r) => r[focusKey] != null).at(-1)?.[focusKey] ?? null;
+
+  const baseline = { voo: stat("voo", null), tqqq: stat("tqqq", null) };
+  const rows = thresholds.map((t) => ({
+    threshold: t, pctl: pctlOf(t), days: vals.filter((v) => v >= t).length,
+    voo: stat("voo", t), tqqq: stat("tqqq", t),
+  }));
+
+  // verdict: lowest threshold whose VOO 3-month win-rate is convincingly high
+  const strong = rows.find((r) => r.voo.q && r.voo.q.hitPct >= 85)
+    ?? rows.find((r) => r.voo.q && r.voo.q.hitPct >= 75) ?? null;
+
+  return {
+    key: focusKey, label: def.label, current: sig(current),
+    min: round2(vals[0]), max: round2(vals[vals.length - 1]),
+    horizons: HOR, baseline, rows,
+    strongThreshold: strong?.threshold ?? null,
+    note: `풋/콜 옵션 비율의 실제 수치별로, 그날 샀다면 이후 1달·3달 주가가 어땠는지 전 기간(${vals.length}거래일)으로 집계. '아무 때나'(전체 평균)보다 수익·승률이 높을수록 그 수치가 '줍줍 구간'.`,
+  };
+}
+
 // ---- Strategy comparison: percentile signals per indicator + combo -----
 // Orient each indicator to "fear" (sign), rank within a trailing window, then
 // buy on entering extreme fear and sell when greed persists. No look-ahead:
@@ -654,6 +707,7 @@ async function main() {
     signals: { buys: sigs.buys, sells: sigs.sells },
     backtest: bt,
     analysis: computeAnalysis(series),
+    buyLevels: computeBuyLevels(series),
     strategyTest: computeStrategyTest(series, cfg, sigs, pctMap),
     sensitivity: computeSensitivity(series, cfg, pctMap),
     scaled: computeScaled(series, cfg, pctMap),
